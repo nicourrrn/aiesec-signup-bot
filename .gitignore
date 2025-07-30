@@ -1,3 +1,12 @@
 .env
 .venv/
 credentials.json
+service_account.json
+**.pyc
+*/__pycache__/
+*.log
+*.sqlite3
+*.db
+*.db-journal
+*.DS_Store
+*.egg-info/

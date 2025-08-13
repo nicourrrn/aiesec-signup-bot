@@ -2,6 +2,7 @@
 .venv/
 credentials.json
 service_account.json
+config.toml
 **.pyc
 */__pycache__/
 *.log

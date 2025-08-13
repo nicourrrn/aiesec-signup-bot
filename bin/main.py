@@ -7,6 +7,7 @@ from src.google_spreadsheet_api import (
     update_responsible,
     DataStorage,
 )
+from src.telegram_api import TelegramAPI
 from src.dto import NewSignUpEvent, SignUpEventResponse
 
 
@@ -23,6 +24,10 @@ data_processor = DataProcessor(service_account_info)
 data_storage = DataStorage()
 
 # Telegram Bot API
+telegram_token = os.getenv("TELEGRAM_TOKEN")
+if not telegram_token:
+    raise ValueError("TELEGRAM_TOKEN environment variable is not set.")
+telegram_api = TelegramAPI(token=telegram_token)
 
 
 async def main():
@@ -44,6 +49,13 @@ async def main():
                 response = SignUpEventResponse(
                     row=row,
                     contacted_by="bot",
+                    timestamp=timestamp,
+                )
+                await telegram_api.send_new_sign_up_event(
+                    chat_id="@nicourrrn",
+                    name=name,
+                    phone=phone,
+                    row=row,
                     timestamp=timestamp,
                 )
                 await update_responsible(

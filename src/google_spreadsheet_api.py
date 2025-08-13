@@ -15,7 +15,11 @@ class DataStorage:
         pickle.dump(item, open("data.pkl", "wb"))
 
     def load(self):
-        self.data = pickle.load(open("data.pkl", "rb"))
+        try:
+            self.data = pickle.load(open("data.pkl", "rb"))
+        except Exception as e:
+            print(f"Error loading data: {e}")
+            self.data = []
 
 
 class DataProcessor:

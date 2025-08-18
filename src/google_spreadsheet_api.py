@@ -1,6 +1,7 @@
 import asyncio
 import pickle
 import datetime
+from typing_extensions import AsyncGenerator
 
 from aiogoogle.client import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds
@@ -73,18 +74,24 @@ async def listen_updates(
     spreadsheet_id: str,
     range_name: str,
     state: list = list(),
-):
+) -> AsyncGenerator[NewSignUpEvent | str, None]:
     while True:
         try:
             response = await data_processor.read_data(spreadsheet_id, range_name)
-            if response.get("values") != state:
-                state = response.get("values", [])
-                yield NewSignUpEvent(
-                    name=state[-1][0] if state else "Incorect",
-                    phone=state[-1][1] if state else "Incorect",
-                    row=len(state) + 1 if state else -1,
-                    timestamp=datetime.datetime.now().isoformat(),
-                )
+            values = response.get("values", [])
+            user_phones = [(row[3], i+3) for i, row in enumerate(values) if len(row[3]) > 0]
+            print(user_phones)
+            for i, (phone, spread_row) in enumerate(user_phones):
+                if phone not in state:
+                    state.append(phone)
+                    row = i  # Adjusting for header rows
+                    yield NewSignUpEvent(
+                        name=values[row][0] if values else "Incorrect",
+                        phone=phone,
+                        row=spread_row,
+                        timestamp=datetime.datetime.now().isoformat(),
+                        local_commitee=values[row][-1],
+                    )
         except Exception as e:
             yield f"Error reading data: {e}"
         await asyncio.sleep(5)
@@ -93,7 +100,7 @@ async def listen_updates(
 async def update_responsible(
     data_processor: DataProcessor, spreadsheet_id: str, data: SignUpEventResponse
 ):
-    range_name = f"C{data.row}:C{data.row}"
-    values = [[data.contacted_by]]
+    range_name = f"rd_responses!AF{data.row}:AG{data.row}"
+    values = [[data.contacted_by, data.timestamp]]
     response = await data_processor.write_data(spreadsheet_id, range_name, values)
     return response

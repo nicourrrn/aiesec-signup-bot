@@ -12,6 +12,9 @@ class NewSignUpEvent(BaseModel):
     timestamp: str = Field(
         ..., description="Timestamp of the sign-up event in ISO 8601 format"
     )
+    local_commitee: str = Field(
+        ..., description="Local committee associated with the sign-up event"
+    )
 
 
 class SignUpEventResponse(BaseModel):

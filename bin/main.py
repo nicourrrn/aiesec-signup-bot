@@ -1,13 +1,15 @@
 import asyncio
 import os, json
 import dotenv
+import sys
 from src.google_spreadsheet_api import (
     DataProcessor,
     listen_updates,
     update_responsible,
     DataStorage,
 )
-from src.telegram_api import TelegramAPI
+from src.telegram_api import TelegramAPI, channels
+from aiogram import types
 from src.dto import NewSignUpEvent, SignUpEventResponse
 
 dotenv.load_dotenv()
@@ -30,39 +32,47 @@ telegram_api = TelegramAPI(token=telegram_token)
 
 @telegram_api.dispatcher.message()
 async def handle_start_command(message):
-    await message.reply(
-        "Hello! I am the AIESEC Sign-Up Bot. I will notify you about new sign-ups.\n"
-        "You can take a sign-up by clicking the button in the message.\n"
-        "If you have any questions, feel free to ask!"
-    )
     print(f"Received /start command from {message.from_user.username or message.from_user.full_name}"
         f" in chat {message.chat.id}")
+
+    if message.text == "/stop_running_bot":
+        sys.exit(0)
+
+@telegram_api.dispatcher.channel_post()
+async def handle_channel_post(message: types.Message):
+    print(f"Received a channel post in chat {message.chat.id}: {message.text}")
 
 
 @telegram_api.dispatcher.callback_query()
 async def handle_take_su_callback(callback_query):
     chat_id = callback_query.message.chat.id
     message_id = callback_query.message.message_id
-    text = "\n".join(callback_query.message.text.splitlines()[1:]) # Get the first line of the message
+    text = callback_query.message.text.splitlines()[1]
     row = int(callback_query.data.replace("take_su:", ""))
     contacted_by = callback_query.from_user.username or callback_query.from_user.full_name
-    # Update the responsible person in the Google Sheet
     await update_responsible(
         data_processor,
         spreadsheet_id=spreadsheet_id,
         data=SignUpEventResponse(
             row=row,
             contacted_by=contacted_by,
-            timestamp=callback_query.message.date.isoformat(),
+            timestamp=callback_query.message.date.strftime("%m/%d/%Y %H:%M:%S"),
         ),
     )
-    # Acknowledge the callback query
     await telegram_api.bot.answer_callback_query(callback_query.id, text="SU taken!")
-    # Edit the original message to indicate that the SU has been taken
     await telegram_api.bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
         text=f"Taken by {contacted_by}\n{text}"
+    )
+    sign_up = data_storage.data[row]
+    await telegram_api.bot.send_message(
+        chat_id=callback_query.from_user.id,
+        text=(f"Contact data for Sign Up:"
+            f"\nName: {sign_up.name}"
+            f"\nPhone: {sign_up.phone}"
+            f"\nTimestamp: {sign_up.timestamp}"
+        )
     )
 
 async def handle_new_sign_up_event():
@@ -78,14 +88,11 @@ async def handle_new_sign_up_event():
             continue
         name, phone, row, timestamp = (event.name, event.phone, event.row, event.timestamp)
         local_commitee = event.local_commitee
+
         print(f"New sign-up event: {name}, {phone}, {row}, {timestamp}, {local_commitee}")
-        response = SignUpEventResponse(
-            row=row,
-            contacted_by="bot",
-            timestamp=timestamp,
-        )
+        data_storage.add(row, event)
         await telegram_api.send_new_sign_up_event(
-            chat_id=-4913279505,
+            chat_id=channels.get(local_commitee, channels["NonRegion"]),
             name=name,
             phone=phone,
             row=row,
@@ -94,11 +101,9 @@ async def handle_new_sign_up_event():
         )
 
 async def main():
-    # Initialize
     await data_processor.init_sheets_api()
     data_storage.load()
 
-    # Create tasks for Telegram API and sign-up event handling
     tg_task = asyncio.create_task(telegram_api.start_polling())
     su_task = asyncio.create_task(handle_new_sign_up_event())
 

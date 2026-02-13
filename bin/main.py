@@ -1,6 +1,8 @@
 import asyncio
+import ssl, certifi
 import os, json
 import dotenv
+from datetime import timedelta
 import sys
 from src.google_spreadsheet_api import (
     DataProcessor,
@@ -15,6 +17,7 @@ from src.dto import NewSignUpEvent, SignUpEventResponse
 dotenv.load_dotenv()
 
 # Google Sheets API
+ssl_context = ssl.create_default_context(cafile=certifi.where())
 with open("service_account.json", "r") as f:
     service_account_info = json.load(f)
 spreadsheet_id = os.getenv("SPREADSHEET_ID") or ""
@@ -47,57 +50,65 @@ async def handle_channel_post(message: types.Message):
 async def handle_take_su_callback(callback_query):
     chat_id = callback_query.message.chat.id
     message_id = callback_query.message.message_id
-    text = callback_query.message.text.splitlines()[1]
     row = int(callback_query.data.replace("take_su:", ""))
     contacted_by = callback_query.from_user.username or callback_query.from_user.full_name
+    timestamp = callback_query.message.date + timedelta(hours=3)
+
     await update_responsible(
         data_processor,
         spreadsheet_id=spreadsheet_id,
         data=SignUpEventResponse(
             row=row,
             contacted_by=contacted_by,
-            timestamp=callback_query.message.date.strftime("%m/%d/%Y %H:%M:%S"),
+            timestamp=timestamp.strftime("%m/%d/%Y %H:%M:%S"),
         ),
     )
+
     await telegram_api.bot.answer_callback_query(callback_query.id, text="SU taken!")
     await telegram_api.bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
-        text=f"Taken by {contacted_by}\n{text}"
+        text=f"Taken by {contacted_by}"
     )
-    sign_up = data_storage.data[row]
-    await telegram_api.bot.send_message(
-        chat_id=callback_query.from_user.id,
-        text=(f"Contact data for Sign Up:"
-            f"\nName: {sign_up.name}"
-            f"\nPhone: {sign_up.phone}"
-            f"\nTimestamp: {sign_up.timestamp}"
+    try:
+        sign_up = data_storage.data[row]
+        await telegram_api.bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text=(f"Contact data for Sign Up:"
+                f"\nName: {sign_up.name}"
+                f"\nPhone: {sign_up.phone}"
+                f"\nTelegram: "
+                f"\nAge: {sign_up.age}"
+                f"\nTimestamp: {sign_up.timestamp}"
+            )
         )
-    )
+    except Exception as e:
+        await telegram_api.bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text="Sorry, error from bot side, check tool🫶"
+        )
+        print(f"Exception: {e}")
+
 
 async def handle_new_sign_up_event():
     global data_processor, spreadsheet_id, telegram_api, data_storage
     async for event in listen_updates(
         data_processor,
         spreadsheet_id=spreadsheet_id,
-        range_name="rd_responses!A3:AE1500",
+        range_name="rd_responses!A3:AD3000",
         state=data_storage.data,
     ):
         if not isinstance(event, NewSignUpEvent):
             print(f"Received non-sign-up event: {event}")
             continue
-        name, phone, row, timestamp = (event.name, event.phone, event.row, event.timestamp)
+        row= event.row
         local_commitee = event.local_commitee
 
-        print(f"New sign-up event: {name}, {phone}, {row}, {timestamp}, {local_commitee}")
+        print(f"New sign-up event: {row}")
         data_storage.add(row, event)
         await telegram_api.send_new_sign_up_event(
             chat_id=channels.get(local_commitee, channels["NonRegion"]),
-            name=name,
-            phone=phone,
             row=row,
-            timestamp=timestamp,
-            local_commitee=local_commitee,
         )
 
 async def main():

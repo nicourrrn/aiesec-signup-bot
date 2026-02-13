@@ -9,6 +9,9 @@ class NewSignUpEvent(BaseModel):
     name: str = Field(..., description="Unique identifier for the user")
     phone: str = Field(..., description="Email address of the user")
     row: int = Field(..., description="Row number in the data source")
+    age: int = Field(..., description="Applicant age")
+    uni: str = Field(..., description="Applicant university")
+    telegram: str = Field(..., description="Telegram")
     timestamp: str = Field(
         ..., description="Timestamp of the sign-up event in ISO 8601 format"
     )

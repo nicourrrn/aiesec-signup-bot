@@ -1,6 +1,6 @@
 import asyncio
 import pickle
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing_extensions import AsyncGenerator
 
 from aiogoogle.client import Aiogoogle
@@ -80,7 +80,7 @@ short_lc_names = {
     "Одеса": "OD",
     "Тернопіль": "TE",
     "Львів": "LV",
-    "Дніпро": "DN",
+    "Дніпро": "DP",
     "Кропивницький": "KP",
     "Черкаси": "CK",
     "КУ": "KU",
@@ -97,31 +97,41 @@ async def listen_updates(
     global short_lc_names
     phones = [item.phone for item in state.values()]
     while True:
-        try:
-            response = await data_processor.read_data(spreadsheet_id, range_name)
-            values = response.get("values", [])
-            user_phones = [(row[3], i+3) for i, row in enumerate(values) if len(row[3]) > 0]
-            for i, (phone, spread_row) in enumerate(user_phones):
-                if phone not in phones:
+        response = await data_processor.read_data(spreadsheet_id, range_name)
+        values = response.get("values", [])
+        print(f"Get data from {range_name} with size {len(values)}")
+        start_row = len(values) - 15
+        values = [v for v in values][-15:]
+        print(values)
+        # for v in values:
+        #     if v[0] != "":
+        #         print(f"Last values {v[0]} with date {v[-4]}")
+        #         break
+        for i, row in enumerate(values):
+            phone, timestamp, spread_row = row[3], row[-4], i+3 + start_row
+            try:
+                parced_timestamp = datetime.strptime(timestamp, "%m/%d/%Y %H:%M:%S")
+                if phone not in phones and (datetime.now() - parced_timestamp) < timedelta(hours=5):
                     phones.append(phone)
-                    row = values[spread_row - 3]
-                    print(f"Region: {row[-1]}, Short: {short_lc_names.get(row[-1], 'Unknown')}")
                     yield NewSignUpEvent(
                         name=row[0],
                         local_commitee=short_lc_names.get(row[-1], "Unknown"),
                         phone=phone,
                         row=spread_row,
                         timestamp=datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+                        uni = "",
+                        age = int(row[1]) or -1,
+                        telegram = row[4]
                     )
-        except Exception as e:
-            yield f"Error reading data: {e}"
+            except Exception as e:
+                yield f"Error reading data: {e}"
         await asyncio.sleep(5)
 
 
 async def update_responsible(
     data_processor: DataProcessor, spreadsheet_id: str, data: SignUpEventResponse
 ):
-    range_name = f"rd_responses!AF{data.row}:AG{data.row}"
+    range_name = f"rd_responses!AE{data.row}:AF{data.row}"
     values = [[data.contacted_by, data.timestamp]]
     response = await data_processor.write_data(spreadsheet_id, range_name, values)
     return response
